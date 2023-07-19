@@ -7,8 +7,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/suite"
-	"github.com/wy-z/tspec/samples"
-	"github.com/wy-z/tspec/tspec"
+
+	"tspec/samples"
+	"tspec/tspec"
 )
 
 func TestTSpec(t *testing.T) {
@@ -24,7 +25,7 @@ type TSpecTestSuite struct {
 func (s *TSpecTestSuite) SetupTest() {
 	var err error
 	s.parser = tspec.NewParser()
-	s.pkg, err = s.parser.Import("github.com/wy-z/tspec/samples")
+	s.pkg, err = s.parser.Import("tspec/samples")
 	s.Require().NoError(err)
 }
 

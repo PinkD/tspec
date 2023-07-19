@@ -82,18 +82,14 @@ func (t *Parser) ParseDir(dirPath string, pkgName string, opts ...bool) (pkg *as
 		err = errors.WithStack(err)
 		return
 	}
-	for k := range pkgs {
+	for k, pkg := range pkgs {
 		if k == pkgName {
-			pkg = pkgs[k]
-			break
+			// TODO: show pkgs, find out why only record k == pkgName
+			t.dirPkgMap[dirPath] = pkg
+			return pkg, false, nil
 		}
 	}
-	if pkg == nil {
-		err = errors.Errorf("%s not found in %s", pkgName, dirPath)
-		return
-	}
-
-	t.dirPkgMap[dirPath] = pkg
+	err = errors.Errorf("%s not found in %s", pkgName, dirPath)
 	return
 }
 
@@ -157,19 +153,11 @@ func (t *Parser) parseTypeStr(oPkg *ast.Package, typeStr string) (pkg *ast.Packa
 	var ok bool
 
 	strs := strings.Split(typeStr, ".")
-	l := len(strs)
-	if l == 0 || l > 2 {
-		err = errors.Errorf("invalid type str %s", typeStr)
-		return
-	}
-	if l == 1 {
+	switch len(strs) {
+	case 1:
+		// current package
 		pkgName = oPkg.Name
 		typeTitle = strs[0]
-	} else {
-		pkgName = strs[0]
-		typeTitle = strs[1]
-	}
-	if pkgName == oPkg.Name {
 		pkg = oPkg
 		objs, err = t.ParsePkg(pkg)
 		if err != nil {
@@ -180,39 +168,40 @@ func (t *Parser) parseTypeStr(oPkg *ast.Package, typeStr string) (pkg *ast.Packa
 			err = errors.Errorf("%s not found in package %s", typeTitle, pkg.Name)
 			return
 		}
-		return
-	}
-	var p *ast.Package
-	for _, file := range oPkg.Files {
-		for _, ispec := range file.Imports {
-			pkgPath := strings.Trim(ispec.Path.Value, "\"")
-			p, err = t.Import(pkgPath)
-			if err != nil {
-				err = errors.WithStack(err)
-				return
-			}
-			if !(pkgName == p.Name || (ispec.Name != nil && pkgName == ispec.Name.Name)) {
-				continue
-			}
-			objs, err = t.ParsePkg(p)
-			if err != nil {
-				err = errors.WithStack(err)
-				return
-			}
-			if _, ok = objs[typeTitle]; !ok {
-				continue
-			} else {
-				pkg = p
-				obj = objs[typeTitle]
-				break
+	case 2:
+		// import package
+		pkgName = strs[0]
+		typeTitle = strs[1]
+		var p *ast.Package
+		for _, file := range oPkg.Files {
+			for _, ispec := range file.Imports {
+				pkgPath := strings.Trim(ispec.Path.Value, "\"")
+				p, err = t.Import(pkgPath)
+				if err != nil {
+					err = errors.WithStack(err)
+					return
+				}
+				if !(pkgName == p.Name || (ispec.Name != nil && pkgName == ispec.Name.Name)) {
+					continue
+				}
+				objs, err = t.ParsePkg(p)
+				if err != nil {
+					err = errors.WithStack(err)
+					return
+				}
+				if _, ok = objs[typeTitle]; ok {
+					pkg = p
+					obj = objs[typeTitle]
+					break
+				}
 			}
 		}
+		if pkg == nil || obj == nil {
+			err = errors.Errorf("%s.%s not found", pkgName, typeTitle)
+		}
+	default:
+		err = errors.Errorf("invalid type str %s", typeStr)
 	}
-	if pkg == nil || obj == nil {
-		err = errors.Errorf("%s.%s not found", pkgName, typeTitle)
-		return
-	}
-
 	return
 }
 
@@ -573,16 +562,26 @@ func docToText(d string) (text string) {
 }
 
 var basicTypes = map[string]string{
-	"bool": "boolean:",
-	"uint": "integer:int64", "uint8": "integer:int32", "uint16": "integer:int32",
-	"uint32": "integer:int32", "uint64": "integer:int64",
-	"int": "integer:int64", "int8": "integer:int32", "int16": "integer:int32",
-	"int32": "integer:int32", "int64": "integer:int64",
-	"uintptr": "integer:int64",
-	"float32": "number:float", "float64": "number:double",
-	"string":    "string",
-	"complex64": "number:float", "complex128": "number:double",
-	"byte": "string:byte", "rune": "string:byte", "time": "string:date-time",
+	"bool":       "boolean:",
+	"uint":       "integer:int64",
+	"uint8":      "integer:int32",
+	"uint16":     "integer:int32",
+	"uint32":     "integer:int32",
+	"uint64":     "integer:int64",
+	"int":        "integer:int64",
+	"int8":       "integer:int32",
+	"int16":      "integer:int32",
+	"int32":      "integer:int32",
+	"int64":      "integer:int64",
+	"uintptr":    "integer:int64",
+	"float32":    "number:float",
+	"float64":    "number:double",
+	"string":     "string",
+	"complex64":  "number:float",
+	"complex128": "number:double",
+	"byte":       "string:byte",
+	"rune":       "string:byte",
+	"time":       "string:date-time",
 }
 
 func parseBasicType(typeTitle string) (typ, format string, err error) {

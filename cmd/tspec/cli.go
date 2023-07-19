@@ -7,7 +7,8 @@ import (
 	"strings"
 
 	"github.com/urfave/cli"
-	"github.com/wy-z/tspec/tspec"
+
+	"tspec/tspec"
 )
 
 type cliOpts struct {
@@ -18,7 +19,7 @@ type cliOpts struct {
 	Decorator     string
 }
 
-//Run runs tspec
+// Run runs tspec
 func Run(version string) {
 	app := cli.NewApp()
 	app.Name = "TSpec"

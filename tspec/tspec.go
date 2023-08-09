@@ -65,15 +65,17 @@ func (t *Parser) Options(opts ...ParserOptions) ParserOptions {
 	return t.opts
 }
 
-// ParseDir parses the dir and cache it
-func (t *Parser) ParseDir(dirPath string, pkgName string, opts ...bool) (pkg *ast.Package, cached bool, err error) {
+// ParsePackage parses the dir and cache it
+func (t *Parser) ParsePackage(buildPkg *build.Package, opts ...bool) (pkg *ast.Package, err error) {
+	dirPath := buildPkg.Dir
+	pkgPath := buildPkg.ImportPath
+	pkgName := buildPkg.Name
 	useCache := true
 	if len(opts) > 0 {
 		useCache = opts[0]
 	}
-	if tmpPkg, ok := t.dirPkgMap[dirPath]; ok && useCache {
+	if tmpPkg, ok := t.dirPkgMap[pkgPath]; ok && useCache {
 		pkg = tmpPkg
-		cached = true
 		return
 	}
 
@@ -85,8 +87,8 @@ func (t *Parser) ParseDir(dirPath string, pkgName string, opts ...bool) (pkg *as
 	for k, pkg := range pkgs {
 		if k == pkgName {
 			// TODO: show pkgs, find out why only record k == pkgName
-			t.dirPkgMap[dirPath] = pkg
-			return pkg, false, nil
+			t.dirPkgMap[pkgPath] = pkg
+			return pkg, nil
 		}
 	}
 	err = errors.Errorf("%s not found in %s", pkgName, dirPath)
@@ -106,22 +108,16 @@ func (t *Parser) Import(pkgPath string) (pkg *ast.Package, err error) {
 		return
 	}
 
-	pkg, cached, err := t.ParseDir(importPkg.Dir, importPkg.Name)
+	pkg, err = t.ParsePackage(importPkg)
 	if err != nil {
 		err = errors.WithStack(err)
 		return
 	}
-	if !cached {
-		// collects comments
-		// doc.New takes ownership of the AST pkg and may edit or overwrite it.
-		docPkg, _, e := t.ParseDir(importPkg.Dir, importPkg.Name, false)
-		if e != nil {
-			err = errors.WithStack(e)
-			return
-		}
-		for _, typ := range doc.New(docPkg, "", 0).Types {
-			t.docTypeMap[typ.Name] = typ
-		}
+	// collects comments
+	// doc.New takes ownership of the AST pkg and may edit or overwrite it.
+	docPkg := Copy(pkg)
+	for _, typ := range doc.New(docPkg, "", 0).Types {
+		t.docTypeMap[typ.Name] = typ
 	}
 	return
 }
@@ -172,17 +168,20 @@ func (t *Parser) parseTypeStr(oPkg *ast.Package, typeStr string) (pkg *ast.Packa
 		// import package
 		pkgName = strs[0]
 		typeTitle = strs[1]
-		var p *ast.Package
 		for _, file := range oPkg.Files {
 			for _, ispec := range file.Imports {
 				pkgPath := strings.Trim(ispec.Path.Value, "\"")
-				p, err = t.Import(pkgPath)
-				if err != nil {
-					err = errors.WithStack(err)
-					return
-				}
-				if !(pkgName == p.Name || (ispec.Name != nil && pkgName == ispec.Name.Name)) {
+				if !(strings.HasSuffix(pkgPath, pkgName) || (ispec.Name != nil && pkgName == ispec.Name.Name)) {
 					continue
+				}
+				p, ok := t.dirPkgMap[pkgPath]
+				if !ok {
+					p, err = t.Import(pkgPath)
+					if err != nil {
+						err = errors.WithStack(err)
+						return
+					}
+					t.dirPkgMap[pkgPath] = p
 				}
 				objs, err = t.ParsePkg(p)
 				if err != nil {
